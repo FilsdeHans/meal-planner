@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import { onAuthChange, getCurrentUser, signOut } from './lib/auth';
 import { supabase } from './lib/supabase';
-import { fetchMeals } from './lib/meals';
+import { fetchMeals, fetchIngredients } from './lib/meals';
 import { getWeekId, getWeekLabel, getOrCreateWeekPlan, subscribeToWeekPlan } from './lib/weekPlan';
+import {
+  buildShoppingItems, syncShoppingItems, fetchShoppingItems,
+  subscribeToShoppingItems, updateWeekPlanStage,
+} from './lib/shopping';
 import SignIn from './components/SignIn';
 import PlanView from './components/PlanView';
+import ReviewView from './components/ReviewView';
+import ShopView from './components/ShopView';
 
 const C = {
   forest:"#2c4a2e", sage:"#c8d9a0", sageLt:"#eef4e4",
@@ -12,15 +18,16 @@ const C = {
 };
 
 export default function App() {
-  const [user, setUser]                     = useState(null);
-  const [authLoading, setAuthLoading]       = useState(true);
-  const [householdId, setHouseholdId]       = useState(null);
-  const [householdName, setHouseholdName]   = useState(null);
-  const [memberCount, setMemberCount]       = useState(0);
-  const [meals, setMeals]                   = useState({});
-  const [weekPlan, setWeekPlan]             = useState(null);
-  const [dataLoading, setDataLoading]       = useState(false);
-  const [error, setError]                   = useState(null);
+  const [user, setUser]                   = useState(null);
+  const [authLoading, setAuthLoading]     = useState(true);
+  const [householdId, setHouseholdId]     = useState(null);
+  const [householdName, setHouseholdName] = useState(null);
+  const [meals, setMeals]                 = useState({});
+  const [ingredients, setIngredients]     = useState({});
+  const [weekPlan, setWeekPlan]           = useState(null);
+  const [items, setItems]                 = useState([]);
+  const [dataLoading, setDataLoading]     = useState(false);
+  const [error, setError]                 = useState(null);
 
   // Auth check
   useEffect(() => {
@@ -29,16 +36,16 @@ export default function App() {
     return () => sub.unsubscribe();
   }, []);
 
-  // Load household & meals & week plan once signed in
+  // Load household, meals, week plan
   useEffect(() => {
     if (!user) return;
-    let cleanup = () => {};
+    let cleanupPlan = () => {};
+    let cleanupItems = () => {};
     setDataLoading(true);
     setError(null);
 
     (async () => {
       try {
-        // Household
         const { data: members, error: membersErr } = await supabase
           .from('household_members')
           .select('household_id, households(name)');
@@ -51,20 +58,29 @@ export default function App() {
         const hId = members[0].household_id;
         setHouseholdId(hId);
         setHouseholdName(members[0].households?.name);
-        setMemberCount(members.length);
 
-        // Meals
-        const m = await fetchMeals();
+        const [m, ing] = await Promise.all([fetchMeals(), fetchIngredients()]);
         setMeals(m);
+        setIngredients(ing);
 
-        // Week plan
         const weekId = getWeekId();
         const wp = await getOrCreateWeekPlan(hId, weekId, m);
         setWeekPlan(wp);
 
-        // Real-time subscription
-        cleanup = subscribeToWeekPlan(wp.id, (updated) => {
-          setWeekPlan(updated);
+        cleanupPlan = subscribeToWeekPlan(wp.id, (updated) => setWeekPlan(updated));
+
+        const initialItems = await fetchShoppingItems(wp.id);
+        setItems(initialItems);
+
+        // Expose a way to manually refetch
+        window.__refreshItems = async () => {
+          const refreshed = await fetchShoppingItems(wp.id);
+          setItems(refreshed);
+        };
+
+        cleanupItems = subscribeToShoppingItems(wp.id, async () => {
+          const refreshed = await fetchShoppingItems(wp.id);
+          setItems(refreshed);
         });
       } catch (err) {
         setError(err.message);
@@ -73,8 +89,36 @@ export default function App() {
       }
     })();
 
-    return () => cleanup();
+    return () => { cleanupPlan(); cleanupItems(); };
   }, [user]);
+
+  // Sync shopping items whenever the plan or prompts change, OR when we enter
+  // review/shop stage. This means items always reflect the current plan.
+  useEffect(() => {
+    if (!weekPlan || !householdId) return;
+    if (Object.keys(meals).length === 0 || Object.keys(ingredients).length === 0) return;
+    // Only sync when stage is reviewing or shopping — don't generate items while still planning
+    if (weekPlan.stage !== 'reviewing' && weekPlan.stage !== 'shopping') return;
+
+    const desired = buildShoppingItems(weekPlan.plan || {}, weekPlan.prompts || {}, meals, ingredients);
+    syncShoppingItems(weekPlan.id, householdId, desired)
+      .then(async () => {
+        // After sync, refresh items so the UI sees the new ones
+        const refreshed = await fetchShoppingItems(weekPlan.id);
+        setItems(refreshed);
+      })
+      .catch(e => console.error('Sync items failed:', e));
+  }, [weekPlan?.id, weekPlan?.stage, JSON.stringify(weekPlan?.plan), JSON.stringify(weekPlan?.prompts), Object.keys(meals).length, Object.keys(ingredients).length, householdId]);
+
+  const advanceTo = async (stage) => {
+    try {
+      await updateWeekPlanStage(weekPlan.id, stage);
+      // weekPlan will refresh via real-time, but optimistically:
+      setWeekPlan(prev => ({ ...prev, stage }));
+    } catch (e) {
+      alert('Failed to advance: ' + e.message);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -87,33 +131,62 @@ export default function App() {
 
   if (!user) return <SignIn />;
 
+  const stages = [
+    { id:"planning",  label:"Plan" },
+    { id:"reviewing", label:"Review" },
+    { id:"shopping",  label:"Shop" },
+  ];
+  const stageIdx = stages.findIndex(s => s.id === weekPlan?.stage);
+  const currentStage = weekPlan?.stage || 'planning';
+
   return (
     <div style={{ fontFamily:"'Lato',sans-serif", background:C.cream, minHeight:"100vh",
       paddingBottom:40 }}>
-      {/* Header */}
       <div style={{ background:C.forest, padding:"18px 20px",
         boxShadow:"0 2px 12px rgba(0,0,0,0.15)" }}>
-        <div style={{ maxWidth:430, margin:"0 auto",
-          display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div>
-            <div style={{ color:C.sage, fontSize:10, letterSpacing:3, textTransform:"uppercase" }}>
-              {householdName || "—"}
+        <div style={{ maxWidth:430, margin:"0 auto" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start",
+            marginBottom:14 }}>
+            <div>
+              <div style={{ color:C.sage, fontSize:10, letterSpacing:3,
+                textTransform:"uppercase" }}>{householdName || "—"}</div>
+              <div style={{ color:"#fff", fontSize:20, fontWeight:700,
+                fontFamily:"'Playfair Display',serif" }}>Meal Planner</div>
             </div>
-            <div style={{ color:"#fff", fontSize:20, fontWeight:700,
-              fontFamily:"'Playfair Display',serif" }}>Meal Planner</div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ color:C.sage, fontSize:11 }}>{getWeekLabel()}</div>
+              <button onClick={signOut} style={{ background:"rgba(255,255,255,0.1)",
+                border:"none", color:C.sage, padding:"4px 10px", borderRadius:6, fontSize:11,
+                cursor:"pointer", marginTop:4 }}>Sign out</button>
+            </div>
           </div>
-          <div style={{ textAlign:"right" }}>
-            <div style={{ color:C.sage, fontSize:11 }}>{getWeekLabel()}</div>
-            <button onClick={signOut} style={{ background:"rgba(255,255,255,0.1)",
-              border:"none", color:C.sage, padding:"4px 10px", borderRadius:6, fontSize:11,
-              cursor:"pointer", marginTop:4 }}>
-              Sign out
-            </button>
-          </div>
+          {weekPlan && (
+            <div style={{ display:"flex", alignItems:"center", gap:0 }}>
+              {stages.map((st, i) => {
+                const active = st.id === currentStage;
+                const done = i < stageIdx;
+                return (
+                  <div key={st.id} style={{ display:"flex", alignItems:"center", flex:1 }}>
+                    <div onClick={() => done && advanceTo(st.id)} style={{ flex:1, textAlign:"center",
+                      padding:"6px 0", borderRadius:20,
+                      background: active ? C.sage : done ? "rgba(200,217,160,0.3)" : "rgba(255,255,255,0.1)",
+                      color: active ? C.forest : done ? C.sage : "rgba(255,255,255,0.4)",
+                      fontSize:11, fontWeight: active ? 700 : 400,
+                      cursor: done ? "pointer" : "default", transition:"all 0.2s" }}>
+                      {done ? "✓ " : ""}{st.label}
+                    </div>
+                    {i < stages.length - 1 && (
+                      <div style={{ width:16, height:1, background:"rgba(255,255,255,0.2)",
+                        flexShrink:0 }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Main */}
       <div style={{ maxWidth:430, margin:"0 auto", padding:"16px" }}>
         {error && (
           <div style={{ background:"#fff8f8", border:"1px solid #f5c0c0", borderRadius:12,
@@ -128,12 +201,30 @@ export default function App() {
           </div>
         )}
 
-        {!dataLoading && weekPlan && (
-          <PlanView
-            weekPlan={weekPlan}
-            meals={meals}
-            onPlanUpdate={(plan) => setWeekPlan(prev => ({ ...prev, plan }))}
-          />
+        {!dataLoading && weekPlan && currentStage === 'planning' && (
+          <>
+            <PlanView weekPlan={weekPlan} meals={meals}
+              onPlanUpdate={plan => setWeekPlan(prev => ({ ...prev, plan }))} />
+            <div style={{ height:80 }} />
+            <button onClick={() => advanceTo('reviewing')} style={{ position:"fixed",
+              bottom:24, left:"50%", transform:"translateX(-50%)",
+              background:C.forest, color:"#fff", border:"none", borderRadius:50,
+              padding:"15px 32px", fontSize:14, fontWeight:700, cursor:"pointer",
+              boxShadow:"0 4px 20px rgba(44,74,46,0.4)", zIndex:50, whiteSpace:"nowrap" }}>
+              Review & Build List →
+            </button>
+          </>
+        )}
+
+        {!dataLoading && weekPlan && currentStage === 'reviewing' && (
+          <ReviewView weekPlan={weekPlan} meals={meals} items={items}
+            householdId={householdId}
+            onAdvance={() => advanceTo('shopping')}
+            refreshItems={window.__refreshItems} />
+        )}
+
+        {!dataLoading && weekPlan && currentStage === 'shopping' && (
+          <ShopView items={items} />
         )}
       </div>
     </div>
