@@ -4,8 +4,18 @@ export async function signInWithEmail(email) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: window.location.origin,
+      // No emailRedirectTo — we want a code, not a magic link
+      shouldCreateUser: true,
     },
+  });
+  if (error) throw error;
+}
+
+export async function verifyOtp(email, token) {
+  const { error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: 'email',
   });
   if (error) throw error;
 }
