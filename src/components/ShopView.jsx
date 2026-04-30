@@ -6,13 +6,15 @@ const C = {
   ink:"#1e1e1e", mid:"#6b6157", soft:"#b0a898", line:"#e8e2d8",
 };
 
-export default function ShopView({ items }) {
+export default function ShopView({ items, refreshItems }) {
   const cycle = async (item) => {
     const next = !item.status || item.status === 'pending' ? 'got'
                : item.status === 'got' ? 'unavailable'
                : 'pending';
-    try { await updateItemStatus(item.id, next); }
-    catch (e) { alert('Failed: ' + e.message); }
+    try {
+      await updateItemStatus(item.id, next);
+      if (refreshItems) await refreshItems();
+    } catch (e) { alert('Failed: ' + e.message); }
   };
 
   const totalItems   = items.length;

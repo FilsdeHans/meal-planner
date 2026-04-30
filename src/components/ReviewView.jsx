@@ -11,7 +11,7 @@ const C = {
   ink:"#1e1e1e", mid:"#6b6157", soft:"#b0a898", line:"#e8e2d8",
 };
 
-export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems }) {
+export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems, syncItems }) {
   const [prompts, setPrompts] = useState(weekPlan.prompts || {});
   const [qtyModal, setQtyModal] = useState(null);
   const [addingItem, setAddingItem] = useState(false);
@@ -23,8 +23,11 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
   const setPrompt = async (key, val) => {
     const next = { ...prompts, [key]: val };
     setPrompts(next);
-    try { await updateWeekPlanPrompts(weekPlan.id, next); }
-    catch (e) { console.error('Failed to save prompt:', e); }
+    try {
+      await updateWeekPlanPrompts(weekPlan.id, next);
+      // syncItems re-builds the shopping list based on the latest plan + prompts
+      if (syncItems) await syncItems();
+    } catch (e) { console.error('Failed to save prompt:', e); }
   };
 
   const handleQtySave = async (qty, unit) => {
@@ -38,14 +41,18 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
   };
 
   const handleDelete = async (id) => {
-    try { await deleteItem(id); }
-    catch (e) { alert('Failed to remove: ' + e.message); }
+    try {
+      await deleteItem(id);
+      if (refreshItems) await refreshItems();
+    } catch (e) { alert('Failed to remove: ' + e.message); }
   };
 
   const handleAddItem = async () => {
     if (!newItemText.trim()) return;
-    try { await addManualItem(weekPlan.id, householdId, newItemText.trim()); }
-    catch (e) { alert('Failed to add: ' + e.message); }
+    try {
+      await addManualItem(weekPlan.id, householdId, newItemText.trim());
+      if (refreshItems) await refreshItems();
+    } catch (e) { alert('Failed to add: ' + e.message); }
     setNewItemText('');
     setAddingItem(false);
   };
@@ -216,8 +223,8 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
             onKeyDown={e => e.key === 'Enter' && handleAddItem()}
             placeholder="Add item…"
             style={{ width:"100%", border:`1.5px solid ${C.line}`, borderRadius:10,
-              padding:"11px 13px", fontSize:15, outline:"none", background:C.cream,
-              boxSizing:"border-box" }} />
+              padding:"11px 13px", fontSize:15, outline:"none", background:"#ffffff",
+              color:C.ink, colorScheme:"light", boxSizing:"border-box" }} />
           <div style={{ display:"flex", gap:10, marginTop:10 }}>
             <button onClick={() => setAddingItem(false)} style={{ flex:1, padding:"12px 0",
               borderRadius:10, border:"none", background:C.warm, color:C.mid, fontSize:14,

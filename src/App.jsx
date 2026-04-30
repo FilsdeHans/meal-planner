@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { onAuthChange, getCurrentUser, signOut } from './lib/auth';
 import { supabase } from './lib/supabase';
 import { fetchMeals, fetchIngredients } from './lib/meals';
-import { getWeekId, getWeekLabel, getOrCreateWeekPlan, subscribeToWeekPlan } from './lib/weekPlan';
+import { getWeekId, getWeekLabel, getOrCreateWeekPlan, subscribeToWeekPlan, resetWeek } from './lib/weekPlan';
 import {
   buildShoppingItems, syncShoppingItems, fetchShoppingItems,
   subscribeToShoppingItems, updateWeekPlanStage,
@@ -78,6 +78,23 @@ export default function App() {
           setItems(refreshed);
         };
 
+        // Expose a way to force-sync items based on current plan/prompts in DB
+        window.__syncItems = async () => {
+          const { data: latest } = await supabase
+            .from('week_plans')
+            .select('plan, prompts')
+            .eq('id', wp.id)
+            .single();
+          if (latest) {
+            const desired = buildShoppingItems(
+              latest.plan || {}, latest.prompts || {}, m, ing
+            );
+            await syncShoppingItems(wp.id, hId, desired);
+            const refreshed = await fetchShoppingItems(wp.id);
+            setItems(refreshed);
+          }
+        };
+
         cleanupItems = subscribeToShoppingItems(wp.id, async () => {
           const refreshed = await fetchShoppingItems(wp.id);
           setItems(refreshed);
@@ -120,6 +137,22 @@ export default function App() {
     }
   };
 
+  const handleResetWeek = async () => {
+    if (!weekPlan) return;
+    const ok = window.confirm(
+      "Start the week over?\n\nThis will:\n• Generate a fresh meal plan\n• Clear your prompt answers\n• Remove all shopping list items\n\nThis can't be undone."
+    );
+    if (!ok) return;
+    try {
+      await resetWeek(weekPlan.id, meals);
+      // Optimistic local update
+      setItems([]);
+      setWeekPlan(prev => ({ ...prev, prompts: {}, stage: 'planning' }));
+    } catch (e) {
+      alert('Failed to reset: ' + e.message);
+    }
+  };
+
   if (authLoading) {
     return (
       <div style={{ fontFamily:"'Lato',sans-serif", background:C.cream, minHeight:"100vh",
@@ -155,9 +188,18 @@ export default function App() {
             </div>
             <div style={{ textAlign:"right" }}>
               <div style={{ color:C.sage, fontSize:11 }}>{getWeekLabel()}</div>
-              <button onClick={signOut} style={{ background:"rgba(255,255,255,0.1)",
-                border:"none", color:C.sage, padding:"4px 10px", borderRadius:6, fontSize:11,
-                cursor:"pointer", marginTop:4 }}>Sign out</button>
+              <div style={{ display:"flex", gap:6, marginTop:4, justifyContent:"flex-end" }}>
+                {weekPlan && (
+                  <button onClick={handleResetWeek} title="Start week over"
+                    style={{ background:"rgba(255,255,255,0.1)", border:"none", color:C.sage,
+                      padding:"4px 10px", borderRadius:6, fontSize:11, cursor:"pointer" }}>
+                    ↻ Reset
+                  </button>
+                )}
+                <button onClick={signOut} style={{ background:"rgba(255,255,255,0.1)",
+                  border:"none", color:C.sage, padding:"4px 10px", borderRadius:6, fontSize:11,
+                  cursor:"pointer" }}>Sign out</button>
+              </div>
             </div>
           </div>
           {weekPlan && (
@@ -220,11 +262,12 @@ export default function App() {
           <ReviewView weekPlan={weekPlan} meals={meals} items={items}
             householdId={householdId}
             onAdvance={() => advanceTo('shopping')}
-            refreshItems={window.__refreshItems} />
+            refreshItems={window.__refreshItems}
+            syncItems={window.__syncItems} />
         )}
 
         {!dataLoading && weekPlan && currentStage === 'shopping' && (
-          <ShopView items={items} />
+          <ShopView items={items} refreshItems={window.__refreshItems} />
         )}
       </div>
     </div>

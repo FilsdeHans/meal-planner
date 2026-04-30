@@ -61,7 +61,8 @@ export default function SignIn() {
               style={{
                 width:"100%", border:`1.5px solid ${C.line}`, borderRadius:10,
                 padding:"12px 14px", fontSize:16, fontFamily:"'Lato', sans-serif",
-                boxSizing:"border-box", outline:"none", background:C.cream, marginBottom:14,
+                boxSizing:"border-box", outline:"none", background:"#ffffff",
+                color:C.ink, colorScheme:"light", marginBottom:14,
               }}
             />
             <button type="submit" disabled={status === 'sending'} style={{

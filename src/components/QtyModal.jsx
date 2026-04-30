@@ -39,7 +39,8 @@ export default function QtyModal({ item, onSave, onClose }) {
           onFocus={e => e.target.select()}
           style={{ width:"100%", border:`1.5px solid ${C.line}`, borderRadius:10,
             padding:"12px 14px", fontSize:20, fontFamily:"'Lato',sans-serif",
-            boxSizing:"border-box", outline:"none", background:C.cream, marginBottom:14 }} />
+            boxSizing:"border-box", outline:"none", background:"#ffffff", color:C.ink,
+            colorScheme:"light", marginBottom:14 }} />
         <div style={{ fontSize:11, color:C.mid, letterSpacing:1.5, textTransform:"uppercase",
           marginBottom:8 }}>Unit (optional)</div>
         <div style={{ display:"flex", gap:8, marginBottom:24 }}>

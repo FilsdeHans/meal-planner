@@ -131,6 +131,33 @@ export async function updatePlan(weekPlanId, plan) {
 }
 
 /**
+ * Reset the current week — clears the plan, prompts, items and stage.
+ * Generates a fresh suggested plan.
+ */
+export async function resetWeek(weekPlanId, meals) {
+  // Delete all shopping items for this week
+  const { error: delErr } = await supabase
+    .from('shopping_items')
+    .delete()
+    .eq('week_plan_id', weekPlanId);
+  if (delErr) throw delErr;
+
+  // Generate fresh plan
+  const newPlan = suggestPlan(meals);
+
+  // Reset the week plan
+  const { error: updErr } = await supabase
+    .from('week_plans')
+    .update({
+      plan: newPlan,
+      prompts: {},
+      stage: 'planning',
+    })
+    .eq('id', weekPlanId);
+  if (updErr) throw updErr;
+}
+
+/**
  * Subscribe to real-time changes on a specific week plan.
  * onUpdate gets called with the updated row whenever it changes.
  * Returns a cleanup function.
