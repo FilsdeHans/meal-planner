@@ -198,6 +198,7 @@ export async function fetchShoppingItems(weekPlanId) {
     .from('shopping_items')
     .select('*')
     .eq('week_plan_id', weekPlanId)
+    .eq('user_deleted', false)
     .order('added_at', { ascending: true });
   if (error) throw error;
   return data;
@@ -227,7 +228,7 @@ export async function updateItemStatus(itemId, status) {
 export async function deleteItem(itemId) {
   const { error } = await supabase
     .from('shopping_items')
-    .delete()
+    .update({ user_deleted: true })
     .eq('id', itemId);
   if (error) throw error;
 }
