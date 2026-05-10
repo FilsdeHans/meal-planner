@@ -15,7 +15,7 @@ const C = {
 export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems, syncItems }) {
   const [prompts, setPrompts] = useState(weekPlan.prompts || {});
   const [qtyModal, setQtyModal] = useState(null);
-  const [addingItem, setAddingItem] = useState(false);
+  const [addStep, setAddStep] = useState(null); // null | 'name' | 'aisle'
   const [newItemText, setNewItemText] = useState('');
 
   // Sync local prompts state from prop
@@ -48,14 +48,14 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
     } catch (e) { alert('Failed to remove: ' + e.message); }
   };
 
-  const handleAddItem = async () => {
+  const handleAddItem = async (aisle = 'extras') => {
     if (!newItemText.trim()) return;
     try {
-      await addManualItem(weekPlan.id, householdId, newItemText.trim());
+      await addManualItem(weekPlan.id, householdId, newItemText.trim(), aisle);
       if (refreshItems) await refreshItems();
     } catch (e) { alert('Failed to add: ' + e.message); }
     setNewItemText('');
-    setAddingItem(false);
+    setAddStep(null);
   };
 
   const handleAdvance = async () => {
@@ -236,27 +236,59 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
         })}
       </div>
 
-      {/* Add item */}
-      {addingItem ? (
+      {/* Add item — step 1: name */}
+      {addStep === 'name' && (
         <div style={{ background:"#fff", borderRadius:12, padding:14,
           boxShadow:"0 1px 6px rgba(0,0,0,0.05)", marginBottom:12 }}>
           <input autoFocus value={newItemText} onChange={e => setNewItemText(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAddItem()}
+            onKeyDown={e => e.key === 'Enter' && newItemText.trim() && setAddStep('aisle')}
             placeholder="Add item…"
             style={{ width:"100%", border:`1.5px solid ${C.line}`, borderRadius:10,
               padding:"11px 13px", fontSize:15, outline:"none", background:"#ffffff",
               color:C.ink, colorScheme:"light", boxSizing:"border-box" }} />
           <div style={{ display:"flex", gap:10, marginTop:10 }}>
-            <button onClick={() => setAddingItem(false)} style={{ flex:1, padding:"12px 0",
+            <button onClick={() => setAddStep(null)} style={{ flex:1, padding:"12px 0",
               borderRadius:10, border:"none", background:C.warm, color:C.mid, fontSize:14,
               fontWeight:700, cursor:"pointer" }}>Cancel</button>
-            <button onClick={handleAddItem} style={{ flex:1, padding:"12px 0", borderRadius:10,
-              border:"none", background:C.forest, color:"#fff", fontSize:14, fontWeight:700,
-              cursor:"pointer" }}>Add</button>
+            <button onClick={() => newItemText.trim() && setAddStep('aisle')}
+              style={{ flex:1, padding:"12px 0", borderRadius:10, border:"none",
+                background:C.forest, color:"#fff", fontSize:14, fontWeight:700,
+                cursor:"pointer" }}>Next →</button>
           </div>
         </div>
-      ) : (
-        <button onClick={() => setAddingItem(true)} style={{ width:"100%", background:"#fff",
+      )}
+
+      {/* Add item — step 2: aisle picker */}
+      {addStep === 'aisle' && (
+        <div style={{ background:"#fff", borderRadius:12, padding:14,
+          boxShadow:"0 1px 6px rgba(0,0,0,0.05)", marginBottom:12 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+            marginBottom:12 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:C.ink }}>Which section?</div>
+            <button onClick={() => setAddStep(null)} style={{ background:"none", border:"none",
+              color:C.soft, fontSize:22, lineHeight:1, cursor:"pointer", padding:"0 2px" }}>×</button>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7 }}>
+            {AISLES.map(({ id, label }) => (
+              <button key={id} onClick={() => handleAddItem(id)}
+                style={{ background:C.warm, border:`1px solid ${C.line}`, borderRadius:8,
+                  padding:"9px 8px", fontSize:12, color:C.ink, cursor:"pointer",
+                  textAlign:"left", lineHeight:1.3 }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => handleAddItem('extras')}
+            style={{ display:"block", width:"100%", marginTop:10, background:"none",
+              border:"none", color:C.mid, fontSize:12, cursor:"pointer", padding:"6px 0",
+              textDecoration:"underline" }}>
+            Not sure — add to extras
+          </button>
+        </div>
+      )}
+
+      {addStep === null && (
+        <button onClick={() => setAddStep('name')} style={{ width:"100%", background:"#fff",
           border:`1.5px dashed ${C.soft}`, borderRadius:12, padding:14, fontSize:14, color:C.mid,
           cursor:"pointer", marginBottom:12 }}>
           + Add item
