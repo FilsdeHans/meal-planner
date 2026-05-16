@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-// ─── HARDCODED STAPLES (Stage 4 will migrate to household_staples) ───
+// @deprecated — use fetchHouseholdDefaults() instead
 export const WEEKLY_STAPLES = [
   "seeded_loaf","white_loaf","garlic_bread","cheese","sliced_ham","sliced_chicken",
   "yoghurt","biscuits","crackers","apples","salad_bag","onions","garlic",
@@ -10,7 +10,7 @@ export const WEEKLY_STAPLES = [
 
 export const TEX_MEX_DEFAULTS = ["tortillas","guacamole","salsa","sour_cream"];
 
-// type can be "yesno" or "select"
+// @deprecated — use fetchHouseholdPrompts() instead
 export const HOUSEHOLD_PROMPTS = [
   { id:"toilet_rolls",        label:"Toilet rolls",        type:"yesno",  adds:["toilet_rolls"] },
   { id:"kitchen_roll",        label:"Kitchen roll",        type:"yesno",  adds:["kitchen_roll"] },
@@ -49,7 +49,7 @@ export const HOUSEHOLD_PROMPTS = [
  * Returns an array of items derived from the plan and prompt answers.
  * Each item has: { ingredient_key, display_name, aisle, source, source_meal_key }
  */
-export function buildShoppingItems(plan, prompts, meals, ingredients) {
+export function buildShoppingItems(plan, prompts, meals, ingredients, staples = WEEKLY_STAPLES, householdPrompts = HOUSEHOLD_PROMPTS) {
   const seen = new Map(); // ingredient_key -> item object
 
   const add = (ingKey, source, sourceMealKey = null) => {
@@ -65,7 +65,7 @@ export function buildShoppingItems(plan, prompts, meals, ingredients) {
   };
 
   // Weekly staples
-  WEEKLY_STAPLES.forEach(k => add(k, 'staple'));
+  staples.forEach(k => add(k, 'staple'));
 
   // Each meal in the plan
   Object.values(plan).forEach(mealKey => {
@@ -121,7 +121,7 @@ export function buildShoppingItems(plan, prompts, meals, ingredients) {
   Object.entries(prompts).forEach(([key, val]) => {
     if (!key.startsWith('household_')) return;
     const hId = key.replace('household_','');
-    const h = HOUSEHOLD_PROMPTS.find(x => x.id === hId);
+    const h = householdPrompts.find(x => x.id === hId);
     if (!h || val === 'no' || val === 'skip') return;
     if (h.type === 'yesno' && val === 'yes') h.adds.forEach(k => add(k, 'household_prompt'));
     if (h.type === 'select') {
@@ -191,6 +191,30 @@ export async function syncShoppingItems(weekPlanId, householdId, desiredItems) {
       .insert(toInsert);
     if (error) throw error;
   }
+}
+
+export async function fetchHouseholdDefaults() {
+  const { data, error } = await supabase
+    .from('household_staples')
+    .select('ingredient_key')
+    .eq('is_default', true)
+    .eq('is_active', true);
+  if (error) throw error;
+  return data.map(row => row.ingredient_key);
+}
+
+export async function fetchHouseholdPrompts() {
+  const { data, error } = await supabase
+    .from('household_staples')
+    .select('ingredient_key, display_name, prompt_type, prompt_options')
+    .eq('is_default', false)
+    .eq('is_active', true);
+  if (error) throw error;
+  return data.map(row => {
+    const base = { id: row.ingredient_key, label: row.display_name, type: row.prompt_type };
+    if (row.prompt_type === 'yesno') return { ...base, adds: [row.ingredient_key] };
+    return { ...base, options: row.prompt_options };
+  });
 }
 
 export async function fetchShoppingItems(weekPlanId) {
@@ -298,5 +322,9 @@ export const AISLES = [
   { id:"bread",         label:"🍞 Bread" },
   { id:"tea_coffee",    label:"☕ Tea & Coffee" },
   { id:"misc",          label:"📦 Misc" },
+  { id:"sainsburys",    label:"🛒 Sainsbury's" },
+  { id:"iceland",       label:"🧊 Iceland" },
+  { id:"butcher",       label:"🥩 Butcher" },
+  { id:"home_bargains", label:"🏪 Home Bargains" },
   { id:"extras",        label:"➕ Added Items" },
 ];

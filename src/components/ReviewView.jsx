@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  HOUSEHOLD_PROMPTS, AISLES,
+  AISLES,
   updateItemQty, deleteItem, addManualItem, updateWeekPlanStage, updateWeekPlanPrompts,
 } from '../lib/shopping';
 import { refreshReviewStage } from '../lib/weekPlan';
@@ -12,7 +12,7 @@ const C = {
   ink:"#1e1e1e", mid:"#6b6157", soft:"#b0a898", line:"#e8e2d8",
 };
 
-export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems, syncItems }) {
+export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems, syncItems, householdPrompts }) {
   const [prompts, setPrompts] = useState(weekPlan.prompts || {});
   const [qtyModal, setQtyModal] = useState(null);
   const [addStep, setAddStep] = useState(null); // null | 'name' | 'aisle'
@@ -114,7 +114,7 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
   });
 
   const pendingMealPrompts      = mealPrompts.filter(p => prompts[p.key] === undefined);
-  const pendingHouseholdPrompts = HOUSEHOLD_PROMPTS.filter(h => prompts[`household_${h.id}`] === undefined);
+  const pendingHouseholdPrompts = householdPrompts.filter(h => prompts[`household_${h.id}`] === undefined);
 
   // Group items by aisle
   const itemsByAisle = {};
