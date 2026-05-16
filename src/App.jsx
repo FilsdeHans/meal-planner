@@ -9,7 +9,7 @@ import {
 import {
   buildShoppingItems, syncShoppingItems, fetchShoppingItems,
   subscribeToShoppingItems, updateWeekPlanStage,
-  fetchHouseholdDefaults, fetchHouseholdPrompts,
+  fetchHouseholdDefaults, fetchHouseholdPrompts, fetchMealCupboardPrompts,
 } from './lib/shopping';
 import SignIn from './components/SignIn';
 import PlanView from './components/PlanView';
@@ -33,6 +33,7 @@ export default function App() {
   const [items, setItems]                 = useState([]);
   const [staples, setStaples]             = useState([]);
   const [householdPrompts, setHouseholdPrompts] = useState([]);
+  const [cupboardPrompts, setCupboardPrompts]   = useState([]);
   const [dataLoading, setDataLoading]     = useState(false);
   const [error, setError]                 = useState(null);
   const [newShopOpen, setNewShopOpen]     = useState(false);
@@ -62,14 +63,16 @@ export default function App() {
         setHouseholdId(members[0].household_id);
         setHouseholdName(members[0].households?.name);
 
-        const [m, ing, stpls, hPrompts] = await Promise.all([
+        const [m, ing, stpls, hPrompts, cpPrompts] = await Promise.all([
           fetchMeals(), fetchIngredients(),
           fetchHouseholdDefaults(), fetchHouseholdPrompts(),
+          fetchMealCupboardPrompts(),
         ]);
         setMeals(m);
         setIngredients(ing);
         setStaples(stpls);
         setHouseholdPrompts(hPrompts);
+        setCupboardPrompts(cpPrompts);
 
         const active = await getActiveWeekPlan(members[0].household_id);
         setWeekPlan(active);
@@ -104,7 +107,7 @@ export default function App() {
         .single();
       if (latest) {
         const desired = buildShoppingItems(
-          latest.plan || {}, latest.prompts || {}, meals, ingredients, staples, householdPrompts
+          latest.plan || {}, latest.prompts || {}, meals, ingredients, staples, householdPrompts, cupboardPrompts
         );
         await syncShoppingItems(weekPlan.id, householdId, desired);
         const refreshed = await fetchShoppingItems(weekPlan.id);
@@ -118,7 +121,7 @@ export default function App() {
     });
 
     return () => { cleanupPlan(); cleanupItems(); };
-  }, [weekPlan?.id, meals, ingredients, householdId, staples, householdPrompts]);
+  }, [weekPlan?.id, meals, ingredients, householdId, staples, householdPrompts, cupboardPrompts]);
 
   // Sync items when in review/shopping stage
   useEffect(() => {
@@ -126,14 +129,14 @@ export default function App() {
     if (weekPlan.stage !== 'reviewing' && weekPlan.stage !== 'shopping') return;
     if (Object.keys(meals).length === 0 || Object.keys(ingredients).length === 0) return;
 
-    const desired = buildShoppingItems(weekPlan.plan || {}, weekPlan.prompts || {}, meals, ingredients, staples, householdPrompts);
+    const desired = buildShoppingItems(weekPlan.plan || {}, weekPlan.prompts || {}, meals, ingredients, staples, householdPrompts, cupboardPrompts);
     syncShoppingItems(weekPlan.id, householdId, desired)
       .then(async () => {
         const refreshed = await fetchShoppingItems(weekPlan.id);
         setItems(refreshed);
       })
       .catch(e => console.error('Sync items failed:', e));
-  }, [weekPlan?.id, weekPlan?.stage, JSON.stringify(weekPlan?.plan), JSON.stringify(weekPlan?.prompts), Object.keys(meals).length, Object.keys(ingredients).length, householdId, staples.length, householdPrompts.length]);
+  }, [weekPlan?.id, weekPlan?.stage, JSON.stringify(weekPlan?.plan), JSON.stringify(weekPlan?.prompts), Object.keys(meals).length, Object.keys(ingredients).length, householdId, staples.length, householdPrompts.length, cupboardPrompts.length]);
 
   const advanceTo = async (stage) => {
     try {
@@ -288,7 +291,8 @@ export default function App() {
             onAdvance={() => advanceTo('shopping')}
             refreshItems={window.__refreshItems}
             syncItems={window.__syncItems}
-            householdPrompts={householdPrompts} />
+            householdPrompts={householdPrompts}
+            cupboardPrompts={cupboardPrompts} />
         )}
 
         {!dataLoading && weekPlan && currentStage === 'shopping' && (

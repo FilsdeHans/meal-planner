@@ -49,7 +49,7 @@ export const HOUSEHOLD_PROMPTS = [
  * Returns an array of items derived from the plan and prompt answers.
  * Each item has: { ingredient_key, display_name, aisle, source, source_meal_key }
  */
-export function buildShoppingItems(plan, prompts, meals, ingredients, staples = WEEKLY_STAPLES, householdPrompts = HOUSEHOLD_PROMPTS) {
+export function buildShoppingItems(plan, prompts, meals, ingredients, staples = WEEKLY_STAPLES, householdPrompts = HOUSEHOLD_PROMPTS, cupboardPrompts = []) {
   const seen = new Map(); // ingredient_key -> item object
 
   const add = (ingKey, source, sourceMealKey = null) => {
@@ -115,6 +115,15 @@ export function buildShoppingItems(plan, prompts, meals, ingredients, staples = 
       const map = { Chicken:'whole_chicken', Beef:'beef_joint', Pork:'pork_joint', Lamb:'leg_of_lamb' };
       add(map[meat] || 'whole_chicken', 'meal', mealKey);
     }
+
+    // Cupboard prompts
+    cupboardPrompts
+      .filter(cp => cp.meal_key === mealKey)
+      .forEach(cp => {
+        if (prompts[`cupboard_${mealKey}_${cp.ingredient_key}`] === 'yes') {
+          add(cp.ingredient_key, 'cupboard_prompt', mealKey);
+        }
+      });
   });
 
   // Household prompt answers
@@ -201,6 +210,15 @@ export async function fetchHouseholdDefaults() {
     .eq('is_active', true);
   if (error) throw error;
   return data.map(row => row.ingredient_key);
+}
+
+export async function fetchMealCupboardPrompts() {
+  const { data, error } = await supabase
+    .from('meal_cupboard_prompts')
+    .select('meal_key, ingredient_key, display_name')
+    .eq('is_active', true);
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchHouseholdPrompts() {
@@ -315,7 +333,7 @@ export const AISLES = [
   { id:"canned",        label:"🥫 Canned Goods" },
   { id:"root_veg",      label:"🧅 Root Veg & Peppers" },
   { id:"crisps",        label:"🥔 Crisps & Snacks" },
-  { id:"soft_drinks",   label:"🥤 Soft Drinks" },
+  { id:"drinks",        label:"🥤 Drinks" },
   { id:"toiletries",    label:"🧴 Toiletries" },
   { id:"cleaning",      label:"🧹 Cleaning" },
   { id:"frozen",        label:"❄️ Frozen" },

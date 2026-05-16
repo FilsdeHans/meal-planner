@@ -12,7 +12,7 @@ const C = {
   ink:"#1e1e1e", mid:"#6b6157", soft:"#b0a898", line:"#e8e2d8",
 };
 
-export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems, syncItems, householdPrompts }) {
+export default function ReviewView({ weekPlan, meals, items, householdId, onAdvance, refreshItems, syncItems, householdPrompts, cupboardPrompts }) {
   const [prompts, setPrompts] = useState(weekPlan.prompts || {});
   const [qtyModal, setQtyModal] = useState(null);
   const [addStep, setAddStep] = useState(null); // null | 'name' | 'aisle'
@@ -111,6 +111,15 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
         options:["Yes","No"], maps:{ "Yes":"yes","No":"no" } });
       seen.add(`nachos_${mealKey}`);
     }
+    cupboardPrompts.filter(cp => cp.meal_key === mealKey).forEach(cp => {
+      const key = `cupboard_${mealKey}_${cp.ingredient_key}`;
+      if (!seen.has(key)) {
+        mealPrompts.push({ key, isYesNo: true,
+          label:`Making ${meal.name} — do you need ${cp.display_name}?`,
+          options:["Yes","No"] });
+        seen.add(key);
+      }
+    });
   });
 
   const pendingMealPrompts      = mealPrompts.filter(p => prompts[p.key] === undefined);
@@ -168,7 +177,7 @@ export default function ReviewView({ weekPlan, meals, items, householdId, onAdva
             textTransform:"uppercase", marginBottom:8 }}>🍴 Meal questions</div>
           {pendingMealPrompts.map(p => (
             <div key={p.key}>
-              {promptCard(p.label, p.key, p.options, prompts[p.key], false)}
+              {promptCard(p.label, p.key, p.options, prompts[p.key], p.isYesNo || false)}
             </div>
           ))}
         </div>
